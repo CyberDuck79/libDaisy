@@ -138,44 +138,19 @@ DSTATUS SD_status(BYTE lun)
 DRESULT SD_read(BYTE lun, BYTE *buff, DWORD sector, UINT count)
 {
     DRESULT res = RES_ERROR;
-    ReadStatus  = 0;
     uint32_t timeout;
-#if(ENABLE_SD_DMA_CACHE_MAINTENANCE == 1)
-    uint32_t alignedAddr;
-    alignedAddr = (uint32_t)buff & ~0x1F;
-    SCB_CleanDCache_by_Addr((uint32_t *)alignedAddr,
-                            count * BLOCKSIZE + ((uint32_t)buff - alignedAddr));
-#endif
-    if(BSP_SD_ReadBlocks_DMA((uint32_t *)buff, (uint32_t)(sector), count)
+
+    // Use polling mode instead of DMA for reliability
+    if(BSP_SD_ReadBlocks((uint32_t *)buff, (uint32_t)(sector), count, SD_TIMEOUT)
        == MSD_OK)
     {
-        /* Wait that the reading process is completed or a timeout occurs */
         timeout = HAL_GetTick();
-        while((ReadStatus == 0) && ((HAL_GetTick() - timeout) < SD_TIMEOUT)) {}
-        /* incase of a timeout return error */
-        if(ReadStatus == 0)
+        while((HAL_GetTick() - timeout) < SD_TIMEOUT)
         {
-            res = RES_ERROR;
-        }
-        else
-        {
-            ReadStatus = 0;
-            timeout    = HAL_GetTick();
-
-            while((HAL_GetTick() - timeout) < SD_TIMEOUT)
+            if(BSP_SD_GetCardState() == SD_TRANSFER_OK)
             {
-                if(BSP_SD_GetCardState() == SD_TRANSFER_OK)
-                {
-                    res = RES_OK;
-#if(ENABLE_SD_DMA_CACHE_MAINTENANCE == 1)
-                    /* the SCB_InvalidateDCache_by_Addr() requires a 32-Byte aligned address,
-                     * adjust the address and the D-Cache size to invalidate accordingly. */
-                    SCB_InvalidateDCache_by_Addr(
-                        (uint32_t *)alignedAddr,
-                        count * BLOCKSIZE + ((uint32_t)buff - alignedAddr));
-#endif
-                    break;
-                }
+                res = RES_OK;
+                break;
             }
         }
     }
@@ -195,50 +170,19 @@ DRESULT SD_read(BYTE lun, BYTE *buff, DWORD sector, UINT count)
 DRESULT SD_write(BYTE lun, const BYTE *buff, DWORD sector, UINT count)
 {
     DRESULT res = RES_ERROR;
-    WriteStatus = 0;
     uint32_t timeout;
-#if(ENABLE_SD_DMA_CACHE_MAINTENANCE == 1)
-    uint32_t alignedAddr;
-#endif
-    /*
-  * since the MPU is configured as write-through, see main.c file, there isn't any need
-  * to maintain the cache as its content is always coherent with the memory.
-  * If needed, check the file "Middlewares/Third_Party/FatFs/src/drivers/sd_diskio_dma_template.c"
-  * to see how the cache is maintained during the write operations.
-  */
-#if(ENABLE_SD_DMA_CACHE_MAINTENANCE == 1)
 
-    /*
-    the SCB_CleanDCache_by_Addr() requires a 32-Byte aligned address
-    adjust the address and the D-Cache size to clean accordingly.
-    */
-    alignedAddr = (uint32_t)buff & ~0x1F;
-    SCB_CleanDCache_by_Addr((uint32_t *)alignedAddr,
-                            count * BLOCKSIZE + ((uint32_t)buff - alignedAddr));
-#endif
-    if(BSP_SD_WriteBlocks_DMA((uint32_t *)buff, (uint32_t)(sector), count)
+    // Use polling mode instead of DMA for reliability
+    if(BSP_SD_WriteBlocks((uint32_t *)buff, (uint32_t)(sector), count, SD_TIMEOUT)
        == MSD_OK)
     {
-        /* Wait that writing process is completed or a timeout occurs */
         timeout = HAL_GetTick();
-        while((WriteStatus == 0) && ((HAL_GetTick() - timeout) < SD_TIMEOUT)) {}
-        /* incase of a timeout return error */
-        if(WriteStatus == 0)
+        while((HAL_GetTick() - timeout) < SD_TIMEOUT)
         {
-            res = RES_ERROR;
-        }
-        else
-        {
-            WriteStatus = 0;
-            timeout     = HAL_GetTick();
-
-            while((HAL_GetTick() - timeout) < SD_TIMEOUT)
+            if(BSP_SD_GetCardState() == SD_TRANSFER_OK)
             {
-                if(BSP_SD_GetCardState() == SD_TRANSFER_OK)
-                {
-                    res = RES_OK;
-                    break;
-                }
+                res = RES_OK;
+                break;
             }
         }
     }
